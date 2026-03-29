@@ -136,4 +136,104 @@ using TimeSeries
         # test empty timearray
         @test length(split(to(cl, Date(2000)), week)) == 0
     end
+
+    @testset "time_slots" begin
+        @test length(
+            collect(
+                time_slots(
+                    DateTime(2026, 1, 1),
+                    DateTime(2026, 1, 3),
+                    Minute(15);
+                    from=Time(8, 45),
+                    to=Time(13, 45),
+                ),
+            ),
+        ) == 42
+        @test length(
+            collect(
+                time_slots(
+                    DateTime(2026, 1, 1),
+                    DateTime(2026, 1, 1),
+                    Minute(15);
+                    from=Time(14, 0),
+                    to=Time(15, 0),
+                ),
+            ),
+        ) == 0
+        @test length(
+            collect(
+                time_slots(
+                    DateTime(2026, 1, 1, 8, 45),
+                    DateTime(2026, 1, 1, 8, 45),
+                    Minute(15);
+                    from=Time(8, 45),
+                    to=Time(8, 45),
+                ),
+            ),
+        ) == 1
+        @test length(
+            collect(
+                time_slots(
+                    DateTime(2026, 1, 1),
+                    DateTime(2026, 1, 1, 23, 59),
+                    Hour(1);
+                    from=Time(9, 0),
+                    to=Time(17, 0),
+                ),
+            ),
+        ) == 9
+        @test length(
+            collect(
+                time_slots(
+                    DateTime(2026, 1, 1),
+                    DateTime(2026, 1, 1, 23, 59),
+                    Hour(1);
+                    from=Time(13, 0),
+                    to=Time(8, 0),
+                ),
+            ),
+        ) == 0
+        @test length(
+            collect(
+                time_slots(
+                    DateTime(2026, 1, 1):Minute(15):DateTime(2026, 1, 3);
+                    from=Time(8, 45),
+                    to=Time(13, 45),
+                ),
+            ),
+        ) == 42
+        @test length(
+            when(
+                TimeArray(DateTime(2026, 1, 1):Minute(15):DateTime(2026, 1, 3), rand(193)),
+                time_slots(; from=Time(8, 45), to=Time(13, 45)),
+            ),
+        ) == 42
+    end
+
+    # Test for negative Day interval
+    @test_throws ArgumentError time_slots(
+        DateTime(2023, 1, 1), DateTime(2023, 1, 2), Day(-1), from=Time(9), to=Time(17)
+    )
+    # Test for zero Minute interval
+    @test_throws ArgumentError time_slots(
+        DateTime(2023, 1, 1), DateTime(2023, 1, 2), Minute(0)
+    )
+
+    # Test for StepRange overload with negative step
+    rng = DateTime(2023, 1, 2):Day(-1):DateTime(2023, 1, 1)
+    @test_throws ArgumentError time_slots(rng)
+    @testset "TimeSlot performance" begin
+        big_slots = time_slots(
+            DateTime(2000, 1, 1),
+            DateTime(2100, 1, 1),
+            Minute(1);
+            from=Time(9, 0),
+            to=Time(9, 1),
+        )
+
+        @test first(big_slots) == DateTime(2000, 1, 1, 9, 0)
+
+        five_slots = collect(Iterators.take(big_slots, 5))
+        @test length(five_slots) == 5
+    end
 end  # @testset "split"

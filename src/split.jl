@@ -10,6 +10,101 @@ function when(ta::TimeArray, period::Function, t::Integer)
 end
 when(ta::TimeArray, period::Function, t::String) = ta[findall(period.(timestamp(ta)) .== t)]
 
+struct TimeWindow
+    from::Time
+    to::Time
+end
+
+time_slots(; from::Time, to::Time) = TimeWindow(from, to)
+
+"""
+    when(ta::TimeArray, window::TimeWindow)
+
+Return a subset of `TimeArray` where the time of each timestamp falls
+within the daily window `[window.from, window.to]`.
+"""
+function when(ta::TimeArray, window::TimeWindow)
+    return ta[findall(t -> window.from <= Time(t) <= window.to, timestamp(ta))]
+end
+
+struct TimeSlot{T<:TimeType,P<:Period}
+    start::T
+    stop::T
+    interval::P
+    from::Time
+    to::Time
+end
+
+Base.IteratorSize(::Type{<:TimeSlot}) = Base.SizeUnknown()
+Base.eltype(::Type{TimeSlot{T,P}}) where {T,P} = T
+
+function Base.iterate(ts::TimeSlot{T}) where {T}
+    current = ts.start
+    while current <= ts.stop
+        if ts.from <= Time(current) <= ts.to
+            return (current, current + ts.interval)
+        end
+        current += ts.interval
+    end
+    return nothing
+end
+
+function Base.iterate(ts::TimeSlot{T}, state::T) where {T}
+    current = state
+    while current <= ts.stop
+        if ts.from <= Time(current) <= ts.to
+            return (current, current + ts.interval)
+        end
+        current += ts.interval
+    end
+    return nothing
+end
+
+"""
+    time_slots(start::T, stop::T, interval::Period;
+                    from::Time=Time(0,0), to::Time=Time(23,59))
+
+Return A `TimeSlot` iterator where each timestamp falls within the daily time 
+window `[from, to]`,
+filtered from the full `start` to `stop` range at the given `interval`
+"""
+function time_slots(
+    start::T, stop::T, interval::P; from::Time=Time(0, 0), to::Time=Time(23, 59)
+) where {T<:TimeType,P<:Period}
+    # TODO: Negative intervals are currently unsupported and raise an ArgumentError.
+    # Supporting them is non-trivial due to edge cases where the step crosses a
+    # day boundary in reverse, e.g.:
+    #   DateTime(2023, 1, 2, 0, 3):Minute(-4):DateTime(2023, 1, 1)
+    # In this case it's unclear how the from/to time window should be applied.
+    # Check for negative or zero period
+    if interval <= zero(interval)
+        throw(ArgumentError("interval must be positive, got $interval"))
+    end
+
+    return TimeSlot{T,P}(start, stop, interval, from, to)
+end
+
+"""
+   time_slots(range::StepRange{T};
+                    from::Time=Time(0,0), to::Time=Time(23,59))
+                    
+Return A `TimeSlot` iterator where each timestamp falls within the daily time 
+window `[from, to]`,
+filtered from the given `range`
+"""
+function time_slots(
+    range::StepRange{T,P}; from::Time=Time(0, 0), to::Time=Time(23, 59)
+) where {T<:TimeType,P<:Period}
+    # TODO: Negative intervals are currently unsupported and raise an ArgumentError.
+    # Supporting them is non-trivial due to edge cases where the step crosses a
+    # day boundary in reverse, e.g.:
+    #   DateTime(2023, 1, 2, 0, 3):Minute(-4):DateTime(2023, 1, 1)
+    # In this case it's unclear how the from/to time window should be applied.
+    if step(range) <= zero(step(range))
+        throw(ArgumentError("interval must be positive, got $(step(range))"))
+    end
+    return TimeSlot{T,P}(range.start, range.stop, step(range), from, to)
+end
 # from, to ######################
 
 """
